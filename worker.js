@@ -260,6 +260,155 @@ export default {
       }
     }
 
+    // 5. GET, POST, DELETE /api/spk -> Input & Simpan Jadwal SPK Produksi di Cloudflare D1
+    if (url.pathname === '/api/spk') {
+      if (!env.DB) {
+        return jsonResponse({
+          ok: true,
+          d1Bound: false,
+          schedules: {},
+          message: 'Binding D1 (DB) belum aktif.'
+        });
+      }
+
+      try {
+        await env.DB.prepare(
+          `CREATE TABLE IF NOT EXISTS spk_produksi (
+            spk_date TEXT NOT NULL,
+            varian_kue TEXT NOT NULL,
+            qty_box REAL NOT NULL DEFAULT 0,
+            updated_at TEXT DEFAULT (datetime('now')),
+            PRIMARY KEY (spk_date, varian_kue)
+          )`
+        ).run();
+
+        if (request.method === 'GET') {
+          const { results } = await env.DB.prepare(
+            `SELECT
+              spk_date AS spkDate,
+              varian_kue AS varianKue,
+              qty_box AS qtyBox,
+              updated_at AS updatedAt
+            FROM spk_produksi
+            ORDER BY spk_date DESC, varian_kue ASC`
+          ).all();
+
+          // Kelompokkan per tanggal: { "2026-11-09": { "LAPIS TRIPLE CHOCOLATE": 1260, ... } }
+          const schedules = {};
+          for (const row of results || []) {
+            if (!schedules[row.spkDate]) {
+              schedules[row.spkDate] = {};
+            }
+            schedules[row.spkDate][row.varianKue] = Number(row.qtyBox) || 0;
+          }
+
+          return jsonResponse({
+            ok: true,
+            d1Bound: true,
+            schedules,
+            rows: results || []
+          });
+        }
+
+        if (request.method === 'POST') {
+          const body = await request.json();
+          const spkDate = String(body.spkDate || '').trim();
+          const items = Array.isArray(body.items) ? body.items : [];
+
+          if (!/^\d{4}-\d{2}-\d{2}$/.test(spkDate)) {
+            return jsonResponse({ ok: false, error: 'Format Tanggal SPK harus YYYY-MM-DD' }, 400);
+          }
+
+          const stmts = [
+            env.DB.prepare('DELETE FROM spk_produksi WHERE spk_date = ?1').bind(spkDate)
+          ];
+
+          for (const item of items) {
+            const varianKue = String(item.varianKue || '').trim().toUpperCase();
+            const qtyBox = Number(item.qtyBox) || 0;
+            if (varianKue && qtyBox >= 0) {
+              stmts.push(
+                env.DB.prepare(
+                  `INSERT INTO spk_produksi (spk_date, varian_kue, qty_box, updated_at)
+                   VALUES (?1, ?2, ?3, datetime('now'))`
+                ).bind(spkDate, varianKue, qtyBox)
+              );
+            }
+          }
+
+          await env.DB.batch(stmts);
+          return jsonResponse({ ok: true, spkDate, savedCount: items.length });
+        }
+
+        if (request.method === 'DELETE') {
+          const spkDate = String(url.searchParams.get('date') || '').trim();
+          if (!spkDate) {
+            return jsonResponse({ ok: false, error: 'Parameter date wajib diisi' }, 400);
+          }
+          await env.DB.prepare('DELETE FROM spk_produksi WHERE spk_date = ?1').bind(spkDate).run();
+          return jsonResponse({ ok: true, deletedDate: spkDate });
+        }
+      } catch (err) {
+        return jsonResponse({ ok: false, error: err.message }, 500);
+      }
+    }
+
+    // 5. GET & POST /api/actuals -> Simpan & muat realisasi Aktual ITR di Cloudflare D1
+    if (url.pathname === '/api/actuals' && env.DB) {
+      try {
+        await env.DB.prepare(
+          `CREATE TABLE IF NOT EXISTS itr_actuals (
+            spk_date TEXT NOT NULL,
+            kode_sap TEXT NOT NULL,
+            actual_val TEXT NOT NULL,
+            updated_at TEXT DEFAULT (datetime('now')),
+            PRIMARY KEY (spk_date, kode_sap)
+          )`
+        ).run();
+
+        if (request.method === 'GET') {
+          const { results } = await env.DB.prepare(
+            'SELECT spk_date AS spkDate, kode_sap AS kodeSap, actual_val AS actualVal FROM itr_actuals'
+          ).all();
+          const map = {};
+          for (const r of results || []) {
+            map[`${r.spkDate}__${r.kodeSap}`] = r.actualVal;
+          }
+          return jsonResponse({ ok: true, actuals: map });
+        }
+
+        if (request.method === 'POST') {
+          const body = await request.json();
+          const spkDate = String(body.spkDate || '').trim();
+          const kodeSap = String(body.kodeSap || '').trim().toUpperCase();
+          const actualVal = String(body.actualVal ?? '').trim();
+
+          if (!spkDate || !kodeSap) {
+            return jsonResponse({ ok: false, error: 'spkDate dan kodeSap wajib diisi' }, 400);
+          }
+
+          if (actualVal === '') {
+            await env.DB.prepare('DELETE FROM itr_actuals WHERE spk_date = ?1 AND kode_sap = ?2')
+              .bind(spkDate, kodeSap)
+              .run();
+          } else {
+            await env.DB.prepare(
+              `INSERT INTO itr_actuals (spk_date, kode_sap, actual_val, updated_at)
+               VALUES (?1, ?2, ?3, datetime('now'))
+               ON CONFLICT(spk_date, kode_sap) DO UPDATE SET
+                 actual_val = excluded.actual_val,
+                 updated_at = datetime('now')`
+            )
+              .bind(spkDate, kodeSap, actualVal)
+              .run();
+          }
+          return jsonResponse({ ok: true });
+        }
+      } catch (err) {
+        return jsonResponse({ ok: false, error: err.message }, 500);
+      }
+    }
+
     // 5. Endpoint proxy opsional ke Google Sheets
     if (url.pathname === '/api/sheet') {
       const sheetId = url.searchParams.get('id') || MAIN_SPREADSHEET_ID;

@@ -182,17 +182,32 @@ function formatNum(num, maxDecimals = 3) {
   }).format(num);
 }
 
-// Simpan & muat input Aktual dari localStorage
-function loadActualOverrides() {
+// Simpan & muat input Aktual dari localStorage + Cloudflare D1 (/api/actuals)
+async function loadActualOverrides() {
   try {
     const raw = localStorage.getItem('itr_mks_actual_overrides');
     if (raw) state.actualOverrides = JSON.parse(raw);
   } catch (e) {
     state.actualOverrides = {};
   }
+
+  try {
+    if (window.location.protocol.startsWith('http')) {
+      const resp = await fetch('/api/actuals');
+      if (resp.ok) {
+        const data = await resp.json();
+        if (data.ok && data.actuals) {
+          state.actualOverrides = { ...state.actualOverrides, ...data.actuals };
+          renderTable();
+        }
+      }
+    }
+  } catch (e) {
+    // ignore
+  }
 }
 
-function saveActualOverride(dateKey, kodeSap, value) {
+async function saveActualOverride(dateKey, kodeSap, value) {
   const key = `${dateKey}__${kodeSap}`;
   if (value === '' || value === null) {
     delete state.actualOverrides[key];
@@ -203,6 +218,18 @@ function saveActualOverride(dateKey, kodeSap, value) {
     localStorage.setItem('itr_mks_actual_overrides', JSON.stringify(state.actualOverrides));
   } catch (e) {
     // ignore storage errors
+  }
+
+  try {
+    if (window.location.protocol.startsWith('http') && dateKey && kodeSap) {
+      await fetch('/api/actuals', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ spkDate: dateKey, kodeSap, actualVal: value })
+      });
+    }
+  } catch (e) {
+    // ignore
   }
 }
 
@@ -379,18 +406,39 @@ async function tryFetchExternalPrdStockByDate(isoDate) {
   return false;
 }
 
+// Ambil nilai dasar SPK untuk varian kue pada tanggal terpilih (Prioritas: Database D1 -> Google Sheet -> 0)
+function getBaseSpkQtyForVariant(variantNameUpper) {
+  const isoDate = state.selectedSpkIsoDate;
+  if (isoDate && state.d1SpkSchedules && state.d1SpkSchedules[isoDate]) {
+    const d1Day = state.d1SpkSchedules[isoDate];
+    if (d1Day.hasOwnProperty(variantNameUpper)) {
+      return Number(d1Day[variantNameUpper]) || 0;
+    }
+  }
+  const colIdx = state.selectedSpkColIndex;
+  if (colIdx !== null && colIdx !== undefined) {
+    const vObj = state.spkData.variants.find((v) => v.nameUpper === variantNameUpper);
+    if (vObj) {
+      return vObj.quantitiesByCol[colIdx] || 0;
+    }
+  }
+  return 0;
+}
+
+// Ambil nilai efektif SPK (termasuk angka yang sedang diketik user sebelum klik Simpan)
+function getEffectiveSpkQtyForVariant(variantNameUpper) {
+  if (state.simulatedSpkOverrides.hasOwnProperty(variantNameUpper)) {
+    return state.simulatedSpkOverrides[variantNameUpper];
+  }
+  return getBaseSpkQtyForVariant(variantNameUpper);
+}
+
 // Hitung ulang seluruh baris Kebutuhan RMPM & Perlu ITR
 function recalculateAllRows() {
-  const colIdx = state.selectedSpkColIndex;
-
-  // Map target SPK per varian kue (mengutamakan angka simulasi jika sedang diubah user)
+  // Map target SPK per varian kue
   const spkQtyMap = {};
   state.spkData.variants.forEach((v) => {
-    const baseQty = colIdx !== null ? (v.quantitiesByCol[colIdx] || 0) : 0;
-    const effectiveQty = state.simulatedSpkOverrides.hasOwnProperty(v.nameUpper)
-      ? state.simulatedSpkOverrides[v.nameUpper]
-      : baseQty;
-    spkQtyMap[v.nameUpper] = effectiveQty;
+    spkQtyMap[v.nameUpper] = getEffectiveSpkQtyForVariant(v.nameUpper);
   });
 
   state.computedRows = state.masterItems.map((item, index) => {
@@ -437,7 +485,6 @@ function recalculateAllRows() {
     const selisih = stokProduksi - totalKebutuhan;
 
     // Rumus I: IF(Selisih < 0, CEILING(-Selisih, Bulky), 0)
-    // Catatan khusus: Pada baris 28 di sheet asli (PM00391 BOX CKT KEJU), sheet mengalikan 2 jika Anda ingin persis atau standar CEILING
     let perluItr = 0;
     if (selisih < -1e-9) {
       perluItr = ceilingToMultiple(-selisih, item.bulky);
@@ -478,14 +525,10 @@ function renderSummaryAndKpis() {
   const safeItems = state.computedRows.filter((r) => !r.needItr);
   const wrhAlertItems = state.computedRows.filter((r) => r.wrhShort);
 
-  const colIdx = state.selectedSpkColIndex;
   let totalBoxes = 0;
   let activeVariants = 0;
   state.spkData.variants.forEach((v) => {
-    const baseQty = colIdx !== null ? (v.quantitiesByCol[colIdx] || 0) : 0;
-    const qty = state.simulatedSpkOverrides.hasOwnProperty(v.nameUpper)
-      ? state.simulatedSpkOverrides[v.nameUpper]
-      : baseQty;
+    const qty = getEffectiveSpkQtyForVariant(v.nameUpper);
     totalBoxes += qty;
     if (qty > 0) activeVariants++;
   });
@@ -513,31 +556,51 @@ function renderSummaryAndKpis() {
   document.getElementById('countWrhShort').textContent = wrhAlertItems.length;
 }
 
-// Render Panel Rincian Target SPK Harian
+// Update badge status sumber SPK (Database D1 vs Google Sheet vs Belum Disimpan)
+function updateSpkHeaderBadges() {
+  const badge = document.getElementById('spkPanelDateBadge');
+  const sourceBadge = document.getElementById('spkSourceBadge');
+  const resetBtn = document.getElementById('btnResetSpkSim');
+  const isoDate = state.selectedSpkIsoDate;
+  const hasSim = Object.keys(state.simulatedSpkOverrides).length > 0;
+  const isSavedInD1 = Boolean(isoDate && state.d1SpkSchedules && state.d1SpkSchedules[isoDate]);
+
+  badge.textContent = isoDate ? formatIsoToReadable(isoDate) : '-';
+
+  if (sourceBadge) {
+    if (hasSim) {
+      sourceBadge.textContent = 'Sedang Diedit (Belum Disimpan)';
+      sourceBadge.style.background = '#fef3c7';
+      sourceBadge.style.color = '#b45309';
+    } else if (isSavedInD1) {
+      sourceBadge.textContent = '★ Tersimpan di Database D1';
+      sourceBadge.style.background = '#dbeafe';
+      sourceBadge.style.color = '#1d4ed8';
+    } else if (state.selectedSpkColIndex !== null) {
+      sourceBadge.textContent = 'Data Google Sheet';
+      sourceBadge.style.background = '#dcfce7';
+      sourceBadge.style.color = '#15803d';
+    } else {
+      sourceBadge.textContent = 'Tanggal Baru (Silakan Input SPK)';
+      sourceBadge.style.background = '#f1f5f9';
+      sourceBadge.style.color = '#475569';
+    }
+  }
+
+  if (resetBtn) {
+    resetBtn.classList.toggle('hidden', !hasSim && !isSavedInD1);
+    resetBtn.textContent = hasSim ? 'Batal Edit' : 'Hapus SPK D1 (Reset ke Sheet)';
+  }
+}
+
+// Render Panel Input & Rincian Target SPK Harian
 function renderSpkVariantsPanel() {
   const grid = document.getElementById('spkVariantsGrid');
-  const badge = document.getElementById('spkPanelDateBadge');
-  const resetBtn = document.getElementById('btnResetSpkSim');
-
-  const selectedDateObj = state.spkData.dates.find((d) => d.colIndex === state.selectedSpkColIndex);
-  const hasSim = Object.keys(state.simulatedSpkOverrides).length > 0;
-
-  badge.textContent = selectedDateObj
-    ? `${selectedDateObj.label}${hasSim ? ' • Mode Simulasi' : ''}`
-    : '-';
-
-  if (hasSim) {
-    resetBtn.classList.remove('hidden');
-  } else {
-    resetBtn.classList.add('hidden');
-  }
+  updateSpkHeaderBadges();
 
   grid.innerHTML = '';
   state.spkData.variants.forEach((v) => {
-    const baseQty = state.selectedSpkColIndex !== null ? (v.quantitiesByCol[state.selectedSpkColIndex] || 0) : 0;
-    const currentQty = state.simulatedSpkOverrides.hasOwnProperty(v.nameUpper)
-      ? state.simulatedSpkOverrides[v.nameUpper]
-      : baseQty;
+    const currentQty = getEffectiveSpkQtyForVariant(v.nameUpper);
 
     const card = document.createElement('div');
     card.className = `spk-variant-card ${currentQty > 0 ? 'active-spk' : ''}`;
@@ -551,7 +614,7 @@ function renderSpkVariantsPanel() {
           class="spk-variant-input"
           data-variant="${v.nameUpper}"
           value="${currentQty}"
-          title="Ubah angka Box untuk simulasi perhitungan kebutuhan RMPM"
+          title="Ketik jumlah target Box untuk varian ${v.name}"
         />
         <span class="spk-variant-unit">BOX</span>
       </div>
@@ -564,6 +627,7 @@ function renderSpkVariantsPanel() {
       const variantUpper = e.target.getAttribute('data-variant');
       const val = parseFloat(e.target.value);
       state.simulatedSpkOverrides[variantUpper] = isNaN(val) || val < 0 ? 0 : val;
+      e.target.closest('.spk-variant-card')?.classList.toggle('active-spk', state.simulatedSpkOverrides[variantUpper] > 0);
       recalculateAndRender(false);
     });
   });
@@ -705,14 +769,7 @@ function recalculateAndRender(renderSpkPanel = true) {
   if (renderSpkPanel) {
     renderSpkVariantsPanel();
   } else {
-    const badge = document.getElementById('spkPanelDateBadge');
-    const resetBtn = document.getElementById('btnResetSpkSim');
-    const selectedDateObj = state.spkData.dates.find((d) => d.colIndex === state.selectedSpkColIndex);
-    const hasSim = Object.keys(state.simulatedSpkOverrides).length > 0;
-    badge.textContent = selectedDateObj
-      ? `${selectedDateObj.label}${hasSim ? ' • Mode Simulasi' : ''}`
-      : '-';
-    resetBtn.classList.toggle('hidden', !hasSim);
+    updateSpkHeaderBadges();
   }
   renderTable();
 }
@@ -750,49 +807,80 @@ function openBomModal(kodeSap) {
   document.getElementById('bomModal').classList.remove('hidden');
 }
 
-// Populate Dropdown Tanggal SPK
+// Pilih Tanggal SPK berdasarkan ISO Date (misal "2026-11-09" atau tanggal baru)
+function selectSpkByIsoDate(isoDate) {
+  state.selectedSpkIsoDate = isoDate || '';
+  const foundSheetDate = state.spkData.dates.find((d) => d.isoDate === isoDate);
+  state.selectedSpkColIndex = foundSheetDate ? foundSheetDate.colIndex : null;
+
+  const datePicker = document.getElementById('inputSpkCustomDate');
+  if (datePicker && /^\d{4}-\d{2}-\d{2}$/.test(isoDate)) {
+    datePicker.value = isoDate;
+  }
+
+  const select = document.getElementById('selectSpkDate');
+  if (select) {
+    const hasOption = Array.from(select.options).some((o) => o.value === isoDate);
+    if (!hasOption && isoDate) {
+      const opt = document.createElement('option');
+      opt.value = isoDate;
+      opt.textContent = `${formatIsoToReadable(isoDate)} (Input Baru)`;
+      select.insertBefore(opt, select.firstChild);
+    }
+    select.value = isoDate;
+  }
+}
+
+// Populate Dropdown Tanggal SPK (Gabungan Tanggal dari Database D1 + Google Sheets)
 function populateSpkDateDropdown(preferredIsoDate) {
   const select = document.getElementById('selectSpkDate');
   select.innerHTML = '';
 
-  if (state.spkData.dates.length === 0) {
-    select.innerHTML = `<option value="">Tidak ada kolom tanggal</option>`;
-    state.selectedSpkColIndex = null;
-    return;
-  }
+  const d1Dates = Object.keys(state.d1SpkSchedules || {}).sort().reverse();
+  const sheetDates = state.spkData.dates || [];
+  const addedIso = new Set();
 
-  let matchedCol = null;
-  state.spkData.dates.forEach((d) => {
+  // 1. Tambahkan tanggal yang tersimpan di Database Cloudflare D1 terlebih dahulu
+  d1Dates.forEach((iso) => {
     const opt = document.createElement('option');
-    opt.value = String(d.colIndex);
-    opt.textContent = d.label;
+    opt.value = iso;
+    opt.textContent = `★ ${formatIsoToReadable(iso)} (Database D1)`;
     select.appendChild(opt);
-
-    if (preferredIsoDate && d.isoDate === preferredIsoDate) {
-      matchedCol = d.colIndex;
-    }
+    addedIso.add(iso);
   });
 
-  // Jika tanggal default tidak ditemukan, pilih tanggal terakhir yang memiliki jadwal produksi > 0
-  if (matchedCol === null) {
-    for (let i = state.spkData.dates.length - 1; i >= 0; i--) {
-      const col = state.spkData.dates[i].colIndex;
-      const sumBoxes = state.spkData.variants.reduce((acc, v) => acc + (v.quantitiesByCol[col] || 0), 0);
-      if (sumBoxes > 0) {
-        matchedCol = col;
-        break;
+  // 2. Tambahkan tanggal dari Google Sheet
+  sheetDates.forEach((d) => {
+    if (addedIso.has(d.isoDate)) return;
+    const opt = document.createElement('option');
+    opt.value = d.isoDate;
+    opt.textContent = d.label;
+    select.appendChild(opt);
+    addedIso.add(d.isoDate);
+  });
+
+  // Tentukan tanggal aktif
+  let targetIso = preferredIsoDate;
+  if (!targetIso || !addedIso.has(targetIso)) {
+    if (d1Dates.length > 0 && !preferredIsoDate) {
+      targetIso = d1Dates[0];
+    } else {
+      for (let i = sheetDates.length - 1; i >= 0; i--) {
+        const col = sheetDates[i].colIndex;
+        const sumBoxes = state.spkData.variants.reduce((acc, v) => acc + (v.quantitiesByCol[col] || 0), 0);
+        if (sumBoxes > 0) {
+          targetIso = sheetDates[i].isoDate;
+          break;
+        }
       }
     }
   }
 
-  if (matchedCol === null) {
-    matchedCol = state.spkData.dates[0].colIndex;
+  if (!targetIso && sheetDates.length > 0) {
+    targetIso = sheetDates[0].isoDate;
   }
 
-  select.value = String(matchedCol);
-  state.selectedSpkColIndex = matchedCol;
-  const foundDate = state.spkData.dates.find((d) => d.colIndex === matchedCol);
-  state.selectedSpkIsoDate = foundDate ? foundDate.isoDate : '';
+  selectSpkByIsoDate(targetIso || '2026-11-09');
 }
 
 // Export ke CSV
@@ -927,11 +1015,10 @@ function renderBomDbModalTable() {
         <td>${b.satuan}</td>
         <td class="text-right">${formatNum(b.qtyPerBox, 6)}</td>
         <td class="text-right">
-          ${
-            b.id && state.d1Bound
-              ? `<button type="button" class="btn btn-sm btn-ghost btn-del-bom" data-id="${b.id}">Hapus</button>`
-              : `<span style="color:#94a3b8;font-size:11px;">Aktif</span>`
-          }
+          ${b.id && state.d1Bound
+          ? `<button type="button" class="btn btn-sm btn-ghost btn-del-bom" data-id="${b.id}">Hapus</button>`
+          : `<span style="color:#94a3b8;font-size:11px;">Aktif</span>`
+        }
         </td>
       </tr>
     `
@@ -974,17 +1061,109 @@ function openBomDbModal() {
   document.getElementById('bomDbModal').classList.remove('hidden');
 }
 
-// Muat seluruh data utama dari Cloudflare D1 (BOM) & Google Sheets (SPK & Stok)
+// Ambil jadwal SPK yang diinput via Web dari Cloudflare D1 (/api/spk) + localStorage fallback
+async function loadSpkSchedulesFromD1() {
+  let localSchedules = {};
+  try {
+    const raw = localStorage.getItem('itr_mks_d1_spk_schedules');
+    if (raw) localSchedules = JSON.parse(raw);
+  } catch (e) {
+    localSchedules = {};
+  }
+
+  try {
+    if (window.location.protocol.startsWith('http')) {
+      const resp = await fetch('/api/spk');
+      if (resp.ok) {
+        const data = await resp.json();
+        if (data.ok && data.schedules) {
+          state.d1SpkSchedules = { ...localSchedules, ...data.schedules };
+          return state.d1SpkSchedules;
+        }
+      }
+    }
+  } catch (e) {
+    // Fallback ke localStorage
+  }
+
+  state.d1SpkSchedules = localSchedules;
+  return state.d1SpkSchedules;
+}
+
+// Simpan jadwal SPK tanggal aktif ke Database Cloudflare D1 (/api/spk)
+async function saveCurrentSpkToD1() {
+  const isoDate = state.selectedSpkIsoDate;
+  if (!isoDate || !/^\d{4}-\d{2}-\d{2}$/.test(isoDate)) {
+    alert('Silakan pilih Tanggal SPK (YYYY-MM-DD) terlebih dahulu.');
+    return;
+  }
+
+  const btn = document.getElementById('btnSaveSpkD1');
+  const label = document.getElementById('btnSaveSpkLabel');
+  const origLabel = label ? label.textContent : 'Simpan SPK ke Database (D1)';
+  if (btn) btn.disabled = true;
+  if (label) label.textContent = 'Menyimpan ke D1...';
+
+  try {
+    const dayMap = {};
+    const items = state.spkData.variants.map((v) => {
+      const qty = getEffectiveSpkQtyForVariant(v.nameUpper);
+      dayMap[v.nameUpper] = qty;
+      return {
+        varianKue: v.nameUpper,
+        qtyBox: qty
+      };
+    });
+
+    if (!state.d1SpkSchedules) state.d1SpkSchedules = {};
+    state.d1SpkSchedules[isoDate] = dayMap;
+
+    try {
+      localStorage.setItem('itr_mks_d1_spk_schedules', JSON.stringify(state.d1SpkSchedules));
+    } catch (e) {
+      // ignore
+    }
+
+    if (window.location.protocol.startsWith('http')) {
+      const resp = await fetch('/api/spk', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ spkDate: isoDate, items })
+      });
+      const data = await resp.json();
+      if (!data.ok) {
+        throw new Error(data.error || 'Gagal menyimpan SPK ke Cloudflare D1');
+      }
+    }
+
+    state.simulatedSpkOverrides = {};
+    populateSpkDateDropdown(isoDate);
+    recalculateAndRender();
+
+    if (label) label.textContent = 'Tersimpan di D1 ✓';
+    setTimeout(() => {
+      if (label) label.textContent = origLabel;
+    }, 2200);
+  } catch (err) {
+    alert('Gagal menyimpan SPK: ' + err.message);
+    if (label) label.textContent = origLabel;
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+
+// Muat seluruh data utama dari Cloudflare D1 (BOM & SPK) & Google Sheets (Stok)
 async function loadAllSpreadsheetData(preserveDates = false) {
   try {
-    setSyncStatus('syncing', 'Menyinkronkan BOM (Cloudflare) & Google Sheets...');
+    setSyncStatus('syncing', 'Menyinkronkan Database Cloudflare D1 & Google Sheets...');
 
     const [rmpmTable, bomList, spkTable, prdTable, wrhTable] = await Promise.all([
       fetchSheetGviz(MAIN_SPREADSHEET_ID, 'KEBUTUHAN RMPM'),
       loadBomFromCloudflareOrSheet(),
       fetchSheetGviz(MAIN_SPREADSHEET_ID, state.selectedSpkSheet),
       fetchSheetGviz(MAIN_SPREADSHEET_ID, 'Stock_Produksi'),
-      fetchSheetGviz(MAIN_SPREADSHEET_ID, 'Stok_Gudang')
+      fetchSheetGviz(MAIN_SPREADSHEET_ID, 'Stok_Gudang'),
+      loadSpkSchedulesFromD1()
     ]);
 
     const parsedRmpm = parseKebutuhanRmpmTable(rmpmTable);
@@ -993,6 +1172,19 @@ async function loadAllSpreadsheetData(preserveDates = false) {
     state.spkData = parseSpkTable(spkTable);
     state.prdStockMap = parseStockTable(prdTable);
     state.wrhStockMap = parseStockTable(wrhTable);
+
+    // Pastikan seluruh varian kue dari BOM terdaftar di daftar input SPK
+    const existingVarSet = new Set(state.spkData.variants.map((v) => v.nameUpper));
+    const bomVarNames = [...new Set(state.bomList.map((b) => b.varianKue))];
+    bomVarNames.forEach((vName) => {
+      if (vName && vName !== '-' && !existingVarSet.has(vName)) {
+        state.spkData.variants.push({
+          name: vName,
+          nameUpper: vName,
+          quantitiesByCol: {}
+        });
+      }
+    });
 
     if (!preserveDates) {
       document.getElementById('inputPrdDate').value = parsedRmpm.defaultPrdDate;
@@ -1036,13 +1228,31 @@ function initEventListeners() {
     }
   });
 
-  // Ganti Tanggal SPK
+  // Pilih Tanggal SPK dari Dropdown
   document.getElementById('selectSpkDate').addEventListener('change', (e) => {
-    const colIdx = parseInt(e.target.value, 10);
-    state.selectedSpkColIndex = isNaN(colIdx) ? null : colIdx;
-    const found = state.spkData.dates.find((d) => d.colIndex === state.selectedSpkColIndex);
-    state.selectedSpkIsoDate = found ? found.isoDate : '';
+    const isoDate = e.target.value;
     state.simulatedSpkOverrides = {};
+    selectSpkByIsoDate(isoDate);
+    recalculateAndRender();
+  });
+
+  // Pilih Tanggal SPK Bebas dari Date Picker
+  document.getElementById('inputSpkCustomDate').addEventListener('change', (e) => {
+    const isoDate = e.target.value;
+    if (!isoDate) return;
+    state.simulatedSpkOverrides = {};
+    selectSpkByIsoDate(isoDate);
+    recalculateAndRender();
+  });
+
+  // Tombol Simpan SPK ke Database Cloudflare D1
+  document.getElementById('btnSaveSpkD1').addEventListener('click', saveCurrentSpkToD1);
+
+  // Tombol Set 0 (Kosongkan semua varian untuk input baru)
+  document.getElementById('btnClearSpkZero').addEventListener('click', () => {
+    state.spkData.variants.forEach((v) => {
+      state.simulatedSpkOverrides[v.nameUpper] = 0;
+    });
     recalculateAndRender();
   });
 
@@ -1062,10 +1272,33 @@ function initEventListeners() {
     renderTable();
   });
 
-  // Tombol Reset Simulasi SPK
-  document.getElementById('btnResetSpkSim').addEventListener('click', () => {
-    state.simulatedSpkOverrides = {};
-    recalculateAndRender();
+  // Tombol Batal Edit / Hapus SPK D1 (Reset ke Sheet)
+  document.getElementById('btnResetSpkSim').addEventListener('click', async () => {
+    const hasSim = Object.keys(state.simulatedSpkOverrides).length > 0;
+    if (hasSim) {
+      state.simulatedSpkOverrides = {};
+      recalculateAndRender();
+      return;
+    }
+
+    const isoDate = state.selectedSpkIsoDate;
+    if (isoDate && state.d1SpkSchedules && state.d1SpkSchedules[isoDate]) {
+      delete state.d1SpkSchedules[isoDate];
+      try {
+        localStorage.setItem('itr_mks_d1_spk_schedules', JSON.stringify(state.d1SpkSchedules));
+      } catch (e) {
+        // ignore
+      }
+      if (window.location.protocol.startsWith('http')) {
+        try {
+          await fetch(`/api/spk?date=${encodeURIComponent(isoDate)}`, { method: 'DELETE' });
+        } catch (e) {
+          // ignore
+        }
+      }
+      populateSpkDateDropdown(isoDate);
+      recalculateAndRender();
+    }
   });
 
   // Sembunyikan / Tampilkan Rincian SPK

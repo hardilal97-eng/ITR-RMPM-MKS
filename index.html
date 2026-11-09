@@ -1,22 +1,29 @@
 <!DOCTYPE html>
 <html lang="id">
+
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Dashboard Kebutuhan RMPM & ITR — Produksi Makassar</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <link
+    href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap"
+    rel="stylesheet">
   <link rel="stylesheet" href="styles.css" />
 </head>
+
 <body>
   <!-- Top Navigation / Header -->
   <header class="topbar">
     <div class="container topbar-inner">
       <div class="brand">
         <div class="brand-icon">
-          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path>
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+            stroke-linecap="round" stroke-linejoin="round">
+            <path
+              d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z">
+            </path>
             <polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline>
             <line x1="12" y1="22.08" x2="12" y2="12"></line>
           </svg>
@@ -33,23 +40,28 @@
           <span id="syncText">Menghubungkan ke Google Sheets...</span>
         </div>
         <button id="btnOpenBomDb" class="btn btn-secondary" title="Kelola Database BOM di Cloudflare D1">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+            stroke-linecap="round" stroke-linejoin="round">
             <ellipse cx="12" cy="5" rx="9" ry="3"></ellipse>
             <path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"></path>
             <path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"></path>
           </svg>
           <span id="bomDbBtnLabel">Database BOM (D1)</span>
         </button>
-        <button id="btnRefresh" class="btn btn-secondary" title="Muat ulang data terbaru dari Google Sheets & Cloudflare D1">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <button id="btnRefresh" class="btn btn-secondary"
+          title="Muat ulang data terbaru dari Google Sheets & Cloudflare D1">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+            stroke-linecap="round" stroke-linejoin="round">
             <polyline points="23 4 23 10 17 10"></polyline>
             <polyline points="1 20 1 14 7 14"></polyline>
             <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
           </svg>
           <span>Sinkronkan</span>
         </button>
-        <a href="https://docs.google.com/spreadsheets/d/1zNqfqYFt4DTstU2AnHJFrkgtBH7Ee1mOqw79pHvUxfQ/edit?gid=959296916#gid=959296916" target="_blank" rel="noopener" class="btn btn-outline">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <a href="https://docs.google.com/spreadsheets/d/1zNqfqYFt4DTstU2AnHJFrkgtBH7Ee1mOqw79pHvUxfQ/edit?gid=959296916#gid=959296916"
+          target="_blank" rel="noopener" class="btn btn-outline">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+            stroke-linecap="round" stroke-linejoin="round">
             <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path>
             <polyline points="15 3 21 3 21 9"></polyline>
             <line x1="10" y1="14" x2="21" y2="3"></line>
@@ -66,7 +78,8 @@
       <div class="control-panel-header">
         <div>
           <h2 class="section-title">Parameter Perhitungan Otomatis</h2>
-          <p class="section-subtitle">Pilih Tanggal SPK &amp; Tanggal Stock Opname (SO) — perhitungan Total Kebutuhan, Selisih, dan Perlu ITR diperbarui secara otomatis.</p>
+          <p class="section-subtitle">Pilih Tanggal SPK &amp; Tanggal Stock Opname (SO) — perhitungan Total Kebutuhan,
+            Selisih, dan Perlu ITR diperbarui secara otomatis.</p>
         </div>
         <div class="formula-pill">
           <span>Rumus ITR:</span>
@@ -91,11 +104,14 @@
         </div>
 
         <div class="control-group highlight-control">
-          <label for="selectSpkDate">Tanggal SPK Produksi</label>
-          <select id="selectSpkDate" class="form-control">
-            <option value="">Memuat tanggal...</option>
-          </select>
-          <span class="control-hint" id="spkDateHint">Menghitung BOM × Target SPK pada tanggal ini</span>
+          <label for="inputSpkCustomDate">Pilih / Input Tanggal SPK Produksi</label>
+          <div style="display:flex; gap:6px;">
+            <input type="date" id="inputSpkCustomDate" class="form-control" style="flex:1;" value="2026-11-09" title="Pilih tanggal SPK untuk melihat atau menginput jadwal baru" />
+            <select id="selectSpkDate" class="form-control" style="flex:1.2;" title="Daftar tanggal dari Database D1 & Sheet">
+              <option value="">Memuat tanggal...</option>
+            </select>
+          </div>
+          <span class="control-hint" id="spkDateHint">Pilih tanggal bebas atau dari daftar untuk input SPK</span>
         </div>
 
         <div class="control-group">
@@ -173,19 +189,29 @@
       </div>
     </section>
 
-    <!-- Target SPK Breakdown Panel -->
+    <!-- Target SPK Breakdown & Direct Input Panel -->
     <section class="spk-panel card">
       <div class="spk-panel-header">
         <div>
           <h3 class="spk-title">
-            <span>Rincian Target SPK Harian (Varian Kue)</span>
+            <span>Input &amp; Rincian Target SPK Produksi Harian (Varian Kue)</span>
             <span class="badge badge-blue" id="spkPanelDateBadge">-</span>
+            <span class="badge" id="spkSourceBadge" style="background:#dcfce7;color:#15803d;">Google Sheet</span>
           </h3>
-          <p class="spk-subtitle">Anda juga dapat mengubah angka Box di bawah ini untuk simulasi kebutuhan bahan baku &amp; ITR secara langsung.</p>
+          <p class="spk-subtitle">Ketik jumlah target <strong>Box</strong> per varian kue di bawah ini lalu klik <strong>Simpan SPK ke Database (D1)</strong> untuk menyimpan jadwal produksi tanggal terpilih.</p>
         </div>
         <div class="spk-actions">
-          <button id="btnResetSpkSim" class="btn btn-sm btn-ghost hidden">Reset ke Angka Sheet</button>
-          <button id="btnToggleSpk" class="btn btn-sm btn-outline">Sembunyikan Rincian</button>
+          <button id="btnClearSpkZero" class="btn btn-sm btn-outline" title="Nolkan semua angka varian untuk mulai input baru">Set 0 (Kosongkan)</button>
+          <button id="btnResetSpkSim" class="btn btn-sm btn-ghost hidden" title="Kembalikan ke data awal">Batal / Reset</button>
+          <button id="btnSaveSpkD1" class="btn btn-sm btn-primary" title="Simpan jadwal SPK tanggal ini ke Database Cloudflare D1">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path>
+              <polyline points="17 21 17 13 7 13 7 21"></polyline>
+              <polyline points="7 3 7 8 15 8"></polyline>
+            </svg>
+            <span id="btnSaveSpkLabel">Simpan SPK ke Database (D1)</span>
+          </button>
+          <button id="btnToggleSpk" class="btn btn-sm btn-outline">Sembunyikan</button>
         </div>
       </div>
       <div id="spkVariantsGrid" class="spk-variants-grid">
@@ -333,7 +359,8 @@
             <select id="bomDbVariantFilter" class="form-control form-control-sm">
               <option value="ALL">Semua Varian Kue</option>
             </select>
-            <input type="text" id="bomDbSearch" class="form-control form-control-sm" placeholder="Cari bahan baku / kode..." />
+            <input type="text" id="bomDbSearch" class="form-control form-control-sm"
+              placeholder="Cari bahan baku / kode..." />
           </div>
           <button id="btnSyncBomFromSheet" class="btn btn-sm btn-primary">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -347,10 +374,14 @@
 
         <!-- Form Tambah Resep BOM ke Cloudflare D1 -->
         <form id="bomDbAddForm" class="bom-db-form">
-          <input type="text" id="newBomVariant" class="form-control form-control-sm" placeholder="Varian Kue (mis: LAPIS KEJU)" required />
-          <input type="text" id="newBomMaterial" class="form-control form-control-sm" placeholder="Bahan Baku / Kode (mis: RM00001)" required />
-          <input type="text" id="newBomSatuan" class="form-control form-control-sm" placeholder="Satuan (KG/PCS)" value="KG" required />
-          <input type="number" step="any" id="newBomQty" class="form-control form-control-sm" placeholder="Qty per Box" required />
+          <input type="text" id="newBomVariant" class="form-control form-control-sm"
+            placeholder="Varian Kue (mis: LAPIS KEJU)" required />
+          <input type="text" id="newBomMaterial" class="form-control form-control-sm"
+            placeholder="Bahan Baku / Kode (mis: RM00001)" required />
+          <input type="text" id="newBomSatuan" class="form-control form-control-sm" placeholder="Satuan (KG/PCS)"
+            value="KG" required />
+          <input type="number" step="any" id="newBomQty" class="form-control form-control-sm" placeholder="Qty per Box"
+            required />
           <button type="submit" class="btn btn-sm btn-outline">+ Simpan ke D1</button>
         </form>
 
@@ -375,5 +406,5 @@
 
   <script src="app.js"></script>
 </body>
-</html>
 
+</html>
