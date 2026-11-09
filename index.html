@@ -1,0 +1,315 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Dashboard Kebutuhan RMPM & ITR — Produksi Makassar</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <!-- Top Navigation / Header -->
+  <header class="topbar">
+    <div class="container topbar-inner">
+      <div class="brand">
+        <div class="brand-icon">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path>
+            <polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline>
+            <line x1="12" y1="22.08" x2="12" y2="12"></line>
+          </svg>
+        </div>
+        <div>
+          <div class="brand-badge">PRODUKSI MAKASSAR</div>
+          <h1 class="brand-title">Kebutuhan RMPM &amp; Perhitungan ITR</h1>
+        </div>
+      </div>
+
+      <div class="topbar-actions">
+        <div id="syncStatus" class="sync-status syncing">
+          <span class="status-dot"></span>
+          <span id="syncText">Menghubungkan ke Google Sheets...</span>
+        </div>
+        <button id="btnRefresh" class="btn btn-secondary" title="Muat ulang data terbaru dari Google Sheets">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="23 4 23 10 17 10"></polyline>
+            <polyline points="1 20 1 14 7 14"></polyline>
+            <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
+          </svg>
+          <span>Sinkronkan</span>
+        </button>
+        <a href="https://docs.google.com/spreadsheets/d/1zNqfqYFt4DTstU2AnHJFrkgtBH7Ee1mOqw79pHvUxfQ/edit?gid=959296916#gid=959296916" target="_blank" rel="noopener" class="btn btn-outline">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path>
+            <polyline points="15 3 21 3 21 9"></polyline>
+            <line x1="10" y1="14" x2="21" y2="3"></line>
+          </svg>
+          <span>Buka Spreadsheet</span>
+        </a>
+      </div>
+    </div>
+  </header>
+
+  <main class="container main-content">
+    <!-- Parameter & Date Control Bar -->
+    <section class="control-panel card">
+      <div class="control-panel-header">
+        <div>
+          <h2 class="section-title">Parameter Perhitungan Otomatis</h2>
+          <p class="section-subtitle">Pilih Tanggal SPK &amp; Tanggal Stock Opname (SO) — perhitungan Total Kebutuhan, Selisih, dan Perlu ITR diperbarui secara otomatis.</p>
+        </div>
+        <div class="formula-pill">
+          <span>Rumus ITR:</span>
+          <code>IF(Selisih &lt; 0, CEILING(-Selisih, Bulky), 0)</code>
+        </div>
+      </div>
+
+      <div class="control-grid">
+        <div class="control-group">
+          <label for="selectSpkSheet">Sheet Periode SPK</label>
+          <select id="selectSpkSheet" class="form-control">
+            <option value="SPK PRODUKSI">SPK PRODUKSI (Utama / Nov 2026)</option>
+            <option value="SPK PRODUKSI OKT">SPK PRODUKSI OKT</option>
+            <option value="SPK PRODUKSI SEP">SPK PRODUKSI SEP</option>
+            <option value="SPK PRODUKSI AGS">SPK PRODUKSI AGS</option>
+            <option value="SPK PRODUKSI maret">SPK PRODUKSI MARET</option>
+            <option value="SPK PRODUKSI FEB">SPK PRODUKSI FEB</option>
+            <option value="SPK PRODUKSI jan 26">SPK PRODUKSI JAN 26</option>
+            <option value="SPK PRODUKSI DES 2025">SPK PRODUKSI DES 2025</option>
+          </select>
+          <span class="control-hint">Sumber jadwal target produksi harian</span>
+        </div>
+
+        <div class="control-group highlight-control">
+          <label for="selectSpkDate">Tanggal SPK Produksi</label>
+          <select id="selectSpkDate" class="form-control">
+            <option value="">Memuat tanggal...</option>
+          </select>
+          <span class="control-hint" id="spkDateHint">Menghitung BOM × Target SPK pada tanggal ini</span>
+        </div>
+
+        <div class="control-group">
+          <label for="inputPrdDate">Tanggal SO Stock PRD</label>
+          <input type="date" id="inputPrdDate" class="form-control" value="2026-11-08" />
+          <span class="control-hint" id="prdStockHint">Sumber: Sheet Stock_Produksi</span>
+        </div>
+
+        <div class="control-group">
+          <label for="inputWrhDate">Tanggal SO Stock WRH</label>
+          <input type="date" id="inputWrhDate" class="form-control" value="2026-11-08" />
+          <span class="control-hint" id="wrhStockHint">Sumber: Sheet Stok_Gudang</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- KPI Summary Cards -->
+    <section class="kpi-grid">
+      <div class="kpi-card card kpi-danger" id="kpiCardNeedItr">
+        <div class="kpi-top">
+          <span class="kpi-label">Item Perlu ITR (Kurang Stok)</span>
+          <div class="kpi-icon danger">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
+              <line x1="12" y1="9" x2="12" y2="13"></line>
+              <line x1="12" y1="17" x2="12.01" y2="17"></line>
+            </svg>
+          </div>
+        </div>
+        <div class="kpi-value" id="kpiNeedItrCount">-</div>
+        <div class="kpi-meta" id="kpiNeedItrSub">Menunggu data...</div>
+      </div>
+
+      <div class="kpi-card card kpi-success" id="kpiCardSafe">
+        <div class="kpi-top">
+          <span class="kpi-label">Stok Produksi Aman</span>
+          <div class="kpi-icon success">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
+              <polyline points="22 4 12 14.01 9 11.01"></polyline>
+            </svg>
+          </div>
+        </div>
+        <div class="kpi-value" id="kpiSafeCount">-</div>
+        <div class="kpi-meta" id="kpiSafeSub">Stok PRD mencukupi kebutuhan</div>
+      </div>
+
+      <div class="kpi-card card kpi-warning" id="kpiCardWrhAlert">
+        <div class="kpi-top">
+          <span class="kpi-label">Peringatan Stok Gudang (WRH)</span>
+          <div class="kpi-icon warning">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="12" cy="12" r="10"></circle>
+              <line x1="12" y1="8" x2="12" y2="12"></line>
+              <line x1="12" y1="16" x2="12.01" y2="16"></line>
+            </svg>
+          </div>
+        </div>
+        <div class="kpi-value" id="kpiWrhAlertCount">-</div>
+        <div class="kpi-meta" id="kpiWrhAlertSub">Item dengan Perlu ITR &gt; Stok Gudang</div>
+      </div>
+
+      <div class="kpi-card card kpi-primary" id="kpiCardSpkTotal">
+        <div class="kpi-top">
+          <span class="kpi-label">Target Produksi SPK</span>
+          <div class="kpi-icon primary">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <rect x="2" y="7" width="20" height="14" rx="2" ry="2"></rect>
+              <path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"></path>
+            </svg>
+          </div>
+        </div>
+        <div class="kpi-value" id="kpiSpkTotalBoxes">-</div>
+        <div class="kpi-meta" id="kpiSpkActiveVariants">Total Box pada Tanggal SPK</div>
+      </div>
+    </section>
+
+    <!-- Target SPK Breakdown Panel -->
+    <section class="spk-panel card">
+      <div class="spk-panel-header">
+        <div>
+          <h3 class="spk-title">
+            <span>Rincian Target SPK Harian (Varian Kue)</span>
+            <span class="badge badge-blue" id="spkPanelDateBadge">-</span>
+          </h3>
+          <p class="spk-subtitle">Anda juga dapat mengubah angka Box di bawah ini untuk simulasi kebutuhan bahan baku &amp; ITR secara langsung.</p>
+        </div>
+        <div class="spk-actions">
+          <button id="btnResetSpkSim" class="btn btn-sm btn-ghost hidden">Reset ke Angka Sheet</button>
+          <button id="btnToggleSpk" class="btn btn-sm btn-outline">Sembunyikan Rincian</button>
+        </div>
+      </div>
+      <div id="spkVariantsGrid" class="spk-variants-grid">
+        <!-- Populated by JS -->
+      </div>
+    </section>
+
+    <!-- Main Table Filter & Toolbar -->
+    <section class="table-section card">
+      <div class="table-toolbar">
+        <div class="filter-tabs" role="tablist">
+          <button class="filter-tab active" data-filter="all">
+            Semua Item <span class="tab-count" id="countAll">0</span>
+          </button>
+          <button class="filter-tab tab-danger" data-filter="need_itr">
+            Perlu ITR <span class="tab-count" id="countNeedItr">0</span>
+          </button>
+          <button class="filter-tab tab-success" data-filter="safe">
+            Stok Aman <span class="tab-count" id="countSafe">0</span>
+          </button>
+          <button class="filter-tab tab-warning" data-filter="wrh_short">
+            Gudang Kurang <span class="tab-count" id="countWrhShort">0</span>
+          </button>
+        </div>
+
+        <div class="toolbar-controls">
+          <div class="search-box">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="11" cy="11" r="8"></circle>
+              <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+            </svg>
+            <input type="text" id="searchInput" placeholder="Cari Kode SAP atau Nama Bahan Baku..." />
+          </div>
+
+          <select id="categoryFilter" class="form-control form-control-sm">
+            <option value="ALL">Semua Kategori SAP</option>
+            <option value="RM">RM — Raw Material</option>
+            <option value="PM">PM — Packaging Material</option>
+            <option value="PP">PP — Premix / Preparation</option>
+            <option value="LV">LV — Lapis / Olahan</option>
+            <option value="OTHER">Lainnya (AP, GL, PREY, LRCM)</option>
+          </select>
+
+          <button id="btnExportCsv" class="btn btn-sm btn-outline" title="Unduh tabel saat ini ke CSV">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+              <polyline points="7 10 12 15 17 10"></polyline>
+              <line x1="12" y1="15" x2="12" y2="3"></line>
+            </svg>
+            <span>Export CSV</span>
+          </button>
+
+          <button id="btnPrintItr" class="btn btn-sm btn-primary" title="Cetak Daftar Permintaan ITR">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <polyline points="6 9 6 2 18 2 18 9"></polyline>
+              <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"></path>
+              <rect x="6" y="14" width="12" height="8"></rect>
+            </svg>
+            <span>Cetak Form ITR</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Print Header (Only visible when printing) -->
+      <div class="print-only-header">
+        <h2>FORM PERMINTAAN TRANSFER BAHAN BAKU (ITR) — PRODUKSI MAKASSAR</h2>
+        <p id="printMetaInfo"></p>
+      </div>
+
+      <!-- Data Table -->
+      <div class="table-responsive">
+        <table class="data-table" id="rmpmTable">
+          <thead>
+            <tr>
+              <th class="col-no">#</th>
+              <th class="col-sap sortable" data-sort="kodeSap">Kode SAP</th>
+              <th class="col-name sortable" data-sort="bahanBaku">Bahan Baku</th>
+              <th class="col-uom">Satuan</th>
+              <th class="col-num sortable" data-sort="totalKebutuhan">Total Kebutuhan</th>
+              <th class="col-num sortable" data-sort="stokProduksi">Stok Produksi</th>
+              <th class="col-num sortable" data-sort="stokGudang">Stok Gudang</th>
+              <th class="col-num sortable" data-sort="selisih">Selisih (PRD - Keb)</th>
+              <th class="col-num sortable" data-sort="bulky">Bulky</th>
+              <th class="col-num col-itr sortable" data-sort="perluItr">Perlu ITR</th>
+              <th class="col-actual">Aktual</th>
+              <th class="col-status">Status</th>
+            </tr>
+          </thead>
+          <tbody id="rmpmTableBody">
+            <tr>
+              <td colspan="12" class="empty-state">Memuat data dari Google Spreadsheet...</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+
+  <!-- Modal Detail BOM per Bahan Baku -->
+  <div id="bomModal" class="modal-backdrop hidden">
+    <div class="modal-card">
+      <div class="modal-header">
+        <div>
+          <span class="badge badge-blue" id="modalSapBadge">RM00001</span>
+          <h3 id="modalMaterialTitle">Rincian Pemakaian BOM</h3>
+        </div>
+        <button id="btnCloseModal" class="btn-icon" aria-label="Tutup">&times;</button>
+      </div>
+      <div class="modal-body">
+        <p id="modalSubtitle" class="modal-subtitle"></p>
+        <table class="modal-table">
+          <thead>
+            <tr>
+              <th>Varian Kue</th>
+              <th class="text-right">Qty BOM / Box</th>
+              <th class="text-right">Target SPK (Box)</th>
+              <th class="text-right">Total Kebutuhan</th>
+            </tr>
+          </thead>
+          <tbody id="modalBomBody"></tbody>
+          <tfoot>
+            <tr>
+              <th colspan="3" class="text-right">Total Kebutuhan Bahan Baku</th>
+              <th class="text-right" id="modalTotalKebutuhan">0</th>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
+

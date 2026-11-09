@@ -1,0 +1,13 @@
+{
+  "name": "itr-rmpm-makassar",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Dashboard Kebutuhan RMPM & Perhitungan ITR Produksi Makassar",
+  "scripts": {
+    "dev": "npx wrangler dev",
+    "deploy": "npx wrangler deploy"
+  },
+  "devDependencies": {
+    "wrangler": "^4.0.0"
+  }
+}
