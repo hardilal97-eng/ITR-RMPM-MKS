@@ -7,4 +7,6 @@ package-lock.json
 wrangler.jsonc
 wrangler.toml
 worker.js
+bom_seed.js
+migrations
 README.md

@@ -863,6 +863,37 @@ body {
   overflow: hidden;
 }
 
+.modal-card.modal-lg {
+  max-width: 880px;
+}
+
+.bom-db-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+
+.bom-db-filters {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.bom-db-form {
+  display: grid;
+  grid-template-columns: 1.3fr 1.3fr 0.6fr 0.8fr auto;
+  gap: 8px;
+  padding: 10px;
+  background: var(--bg-subtle);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  margin-bottom: 12px;
+}
+
 .modal-header {
   padding: 16px 20px;
   border-bottom: 1px solid var(--border-color);

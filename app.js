@@ -855,14 +855,133 @@ function setSyncStatus(mode, text) {
   txt.textContent = text;
 }
 
-// Muat seluruh data utama dari Google Sheets
+// Ambil BOM dari Cloudflare Worker / D1 Database (/api/bom), dengan fallback ke Google Sheets
+async function loadBomFromCloudflareOrSheet() {
+  try {
+    if (window.location.protocol.startsWith('http')) {
+      const resp = await fetch('/api/bom');
+      if (resp.ok) {
+        const data = await resp.json();
+        if (data.ok && Array.isArray(data.rows) && data.rows.length > 0) {
+          state.bomSource = data.d1Bound ? 'Cloudflare D1 Database' : 'Cloudflare Worker DB';
+          state.d1Bound = Boolean(data.d1Bound);
+          const btnLabel = document.getElementById('bomDbBtnLabel');
+          if (btnLabel) {
+            btnLabel.textContent = data.d1Bound
+              ? `BOM Cloudflare D1 (${data.rows.length})`
+              : `Database BOM (${data.rows.length})`;
+          }
+          return data.rows.map((r) => ({
+            id: r.id,
+            varianKue: String(r.varianKue || '').toUpperCase(),
+            bahanBaku: String(r.bahanBaku || '').toUpperCase(),
+            satuan: String(r.satuan || 'KG').toUpperCase(),
+            qtyPerBox: Number(r.qtyPerBox) || 0
+          }));
+        }
+      }
+    }
+  } catch (e) {
+    // Fallback ke Google Sheets jika dibuka dari file:// lokal
+  }
+
+  const bomTable = await fetchSheetGviz(MAIN_SPREADSHEET_ID, 'BOM');
+  const list = parseBomTable(bomTable);
+  state.bomSource = 'Google Sheets (Direct)';
+  state.d1Bound = false;
+  const btnLabel = document.getElementById('bomDbBtnLabel');
+  if (btnLabel) {
+    btnLabel.textContent = `Database BOM (${list.length})`;
+  }
+  return list.map((r, i) => ({ id: i + 1, ...r }));
+}
+
+// Render Tabel Modal Manajemen Database BOM (Cloudflare D1)
+function renderBomDbModalTable() {
+  const variantFilter = document.getElementById('bomDbVariantFilter').value;
+  const q = (document.getElementById('bomDbSearch').value || '').trim().toLowerCase();
+  const badge = document.getElementById('bomDbSourceBadge');
+  badge.textContent = `${state.bomSource || 'Cloudflare D1'} • ${state.bomList.length} Resep`;
+
+  const filtered = state.bomList.filter((item) => {
+    if (variantFilter !== 'ALL' && item.varianKue !== variantFilter) return false;
+    if (q && !item.bahanBaku.toLowerCase().includes(q) && !item.varianKue.toLowerCase().includes(q)) {
+      return false;
+    }
+    return true;
+  });
+
+  const tbody = document.getElementById('bomDbTableBody');
+  if (filtered.length === 0) {
+    tbody.innerHTML = `<tr><td colspan="6" class="empty-state">Tidak ada resep BOM yang cocok.</td></tr>`;
+    return;
+  }
+
+  tbody.innerHTML = filtered
+    .map(
+      (b, idx) => `
+      <tr>
+        <td>${idx + 1}</td>
+        <td><strong>${b.varianKue}</strong></td>
+        <td><span class="sap-code sap-OTHER">${b.bahanBaku}</span></td>
+        <td>${b.satuan}</td>
+        <td class="text-right">${formatNum(b.qtyPerBox, 6)}</td>
+        <td class="text-right">
+          ${
+            b.id && state.d1Bound
+              ? `<button type="button" class="btn btn-sm btn-ghost btn-del-bom" data-id="${b.id}">Hapus</button>`
+              : `<span style="color:#94a3b8;font-size:11px;">Aktif</span>`
+          }
+        </td>
+      </tr>
+    `
+    )
+    .join('');
+
+  tbody.querySelectorAll('.btn-del-bom').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      const id = btn.getAttribute('data-id');
+      if (!id) return;
+      try {
+        const resp = await fetch(`/api/bom?id=${encodeURIComponent(id)}`, { method: 'DELETE' });
+        const res = await resp.json();
+        if (res.ok) {
+          state.bomList = await loadBomFromCloudflareOrSheet();
+          recalculateAndRender();
+          renderBomDbModalTable();
+        }
+      } catch (err) {
+        alert('Gagal menghapus baris BOM: ' + err.message);
+      }
+    });
+  });
+}
+
+function openBomDbModal() {
+  const select = document.getElementById('bomDbVariantFilter');
+  const currentVal = select.value || 'ALL';
+  const uniqueVariants = [...new Set(state.bomList.map((b) => b.varianKue))].sort();
+  select.innerHTML = `<option value="ALL">Semua Varian Kue (${uniqueVariants.length})</option>`;
+  uniqueVariants.forEach((v) => {
+    const opt = document.createElement('option');
+    opt.value = v;
+    opt.textContent = v;
+    select.appendChild(opt);
+  });
+  select.value = uniqueVariants.includes(currentVal) ? currentVal : 'ALL';
+
+  renderBomDbModalTable();
+  document.getElementById('bomDbModal').classList.remove('hidden');
+}
+
+// Muat seluruh data utama dari Cloudflare D1 (BOM) & Google Sheets (SPK & Stok)
 async function loadAllSpreadsheetData(preserveDates = false) {
   try {
-    setSyncStatus('syncing', 'Menyinkronkan data Google Sheets...');
+    setSyncStatus('syncing', 'Menyinkronkan BOM (Cloudflare) & Google Sheets...');
 
-    const [rmpmTable, bomTable, spkTable, prdTable, wrhTable] = await Promise.all([
+    const [rmpmTable, bomList, spkTable, prdTable, wrhTable] = await Promise.all([
       fetchSheetGviz(MAIN_SPREADSHEET_ID, 'KEBUTUHAN RMPM'),
-      fetchSheetGviz(MAIN_SPREADSHEET_ID, 'BOM'),
+      loadBomFromCloudflareOrSheet(),
       fetchSheetGviz(MAIN_SPREADSHEET_ID, state.selectedSpkSheet),
       fetchSheetGviz(MAIN_SPREADSHEET_ID, 'Stock_Produksi'),
       fetchSheetGviz(MAIN_SPREADSHEET_ID, 'Stok_Gudang')
@@ -870,7 +989,7 @@ async function loadAllSpreadsheetData(preserveDates = false) {
 
     const parsedRmpm = parseKebutuhanRmpmTable(rmpmTable);
     state.masterItems = parsedRmpm.items;
-    state.bomList = parseBomTable(bomTable);
+    state.bomList = bomList;
     state.spkData = parseSpkTable(spkTable);
     state.prdStockMap = parseStockTable(prdTable);
     state.wrhStockMap = parseStockTable(wrhTable);
@@ -886,7 +1005,7 @@ async function loadAllSpreadsheetData(preserveDates = false) {
     recalculateAndRender();
 
     const nowStr = new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
-    setSyncStatus('online', `Terhubung Real-Time • Diperbarui ${nowStr}`);
+    setSyncStatus('online', `Terhubung (${state.bomSource}) • ${nowStr}`);
   } catch (err) {
     console.error(err);
     setSyncStatus('error', `Gagal sinkronisasi: ${err.message}`);
@@ -1017,6 +1136,74 @@ function initEventListeners() {
   document.getElementById('bomModal').addEventListener('click', (e) => {
     if (e.target.id === 'bomModal') {
       document.getElementById('bomModal').classList.add('hidden');
+    }
+  });
+
+  // Modal Database BOM (Cloudflare D1)
+  document.getElementById('btnOpenBomDb').addEventListener('click', openBomDbModal);
+  document.getElementById('btnCloseBomDbModal').addEventListener('click', () => {
+    document.getElementById('bomDbModal').classList.add('hidden');
+  });
+  document.getElementById('bomDbModal').addEventListener('click', (e) => {
+    if (e.target.id === 'bomDbModal') {
+      document.getElementById('bomDbModal').classList.add('hidden');
+    }
+  });
+  document.getElementById('bomDbVariantFilter').addEventListener('change', renderBomDbModalTable);
+  document.getElementById('bomDbSearch').addEventListener('input', renderBomDbModalTable);
+
+  // Tombol Tarik Ulang BOM dari Google Sheet ke Cloudflare D1
+  document.getElementById('btnSyncBomFromSheet').addEventListener('click', async (e) => {
+    const btn = e.currentTarget;
+    const origText = btn.innerHTML;
+    btn.disabled = true;
+    btn.textContent = 'Menarik BOM ke Cloudflare D1...';
+    try {
+      if (window.location.protocol.startsWith('http')) {
+        const resp = await fetch('/api/bom/sync', { method: 'POST' });
+        const data = await resp.json();
+        if (!data.ok) throw new Error(data.error || 'Gagal sinkronisasi BOM');
+        state.bomList = await loadBomFromCloudflareOrSheet();
+      } else {
+        const bomTable = await fetchSheetGviz(MAIN_SPREADSHEET_ID, 'BOM');
+        state.bomList = parseBomTable(bomTable).map((r, i) => ({ id: i + 1, ...r }));
+      }
+      recalculateAndRender();
+      openBomDbModal();
+    } catch (err) {
+      alert('Gagal menarik BOM: ' + err.message);
+    } finally {
+      btn.disabled = false;
+      btn.innerHTML = origText;
+    }
+  });
+
+  // Form Tambah Baris Resep BOM ke Cloudflare D1
+  document.getElementById('bomDbAddForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const varianKue = document.getElementById('newBomVariant').value.trim().toUpperCase();
+    const bahanBaku = document.getElementById('newBomMaterial').value.trim().toUpperCase();
+    const satuan = document.getElementById('newBomSatuan').value.trim().toUpperCase();
+    const qtyPerBox = parseFloat(document.getElementById('newBomQty').value);
+
+    if (!varianKue || !bahanBaku || isNaN(qtyPerBox) || qtyPerBox <= 0) return;
+
+    try {
+      const resp = await fetch('/api/bom', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ varianKue, bahanBaku, satuan, qtyPerBox })
+      });
+      const data = await resp.json();
+      if (!data.ok) throw new Error(data.error || 'Gagal menyimpan ke Cloudflare D1');
+
+      document.getElementById('newBomMaterial').value = '';
+      document.getElementById('newBomQty').value = '';
+      state.bomList = await loadBomFromCloudflareOrSheet();
+      recalculateAndRender();
+      openBomDbModal();
+    } catch (err) {
+      alert(err.message);
     }
   });
 }
